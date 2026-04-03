@@ -1,17 +1,18 @@
 """
 Bot Telegram: Personal Finance Tracker
-Fitur: Catat keuangan, grafik, pengingat harian
+Fitur: Catat keuangan, 1 grafik ringkasan, pengingat harian
 """
 
 import json
 import os
 import io
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.gridspec as gridspec
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -41,6 +42,13 @@ def get_user_data(data, user_id):
     return data[uid]
 
 def format_rupiah(amount):
+    if amount >= 1_000_000:
+        return f"Rp {amount/1_000_000:.1f}jt"
+    elif amount >= 1_000:
+        return f"Rp {amount/1_000:.0f}rb"
+    return f"Rp {amount:.0f}"
+
+def format_rupiah_full(amount):
     return f"Rp {amount:,.0f}".replace(",", ".")
 
 # ─── /start ───────────────────────────────────────────────────────────────────
@@ -49,20 +57,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nama = update.effective_user.first_name
     teks = (
         f"👋 Halo, *{nama}*! Selamat datang di *Finance Tracker Bot* 💰\n\n"
-        "📌 *Perintah Lengkap:*\n\n"
+        "📌 *Perintah:*\n\n"
         "💸 `/keluar 50000 makan siang`\n"
         "💰 `/masuk 3000000 gaji`\n"
         "📊 `/ringkasan` – saldo hari ini\n"
         "📋 `/laporan` – rincian bulan ini\n"
         "🕐 `/riwayat` – 10 transaksi terakhir\n"
         "🎯 `/budget makan 1500000`\n"
-        "✅ `/cek_budget` – sisa budget\n\n"
-        "📈 *Grafik:*\n"
-        "🥧 `/grafik_kategori` – pie chart pengeluaran\n"
-        "📊 `/grafik_mingguan` – bar chart 7 hari\n"
-        "📉 `/grafik_tren` – tren 30 hari\n\n"
+        "✅ `/cek_budget` – sisa budget\n"
+        "📈 `/grafik` – grafik keuangan bulan ini\n\n"
         "⏰ *Pengingat:*\n"
-        "`/reminder 20:00` – set jam pengingat harian\n"
+        "`/reminder 20:00` – set pengingat harian\n"
         "`/reminder off` – matikan pengingat\n\n"
         "🗑 `/reset` – hapus semua data"
     )
@@ -103,10 +108,10 @@ async def keluar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if persen >= 100:
             peringatan = f"\n\n⚠️ *Budget {kategori} HABIS!*"
         elif persen >= 80:
-            peringatan = f"\n\n⚠️ Budget {kategori} tersisa {format_rupiah(batas - total_kat)}"
+            peringatan = f"\n\n⚠️ Budget {kategori} tersisa {format_rupiah_full(batas - total_kat)}"
 
     await update.message.reply_text(
-        f"✅ Pengeluaran dicatat!\n💸 *{format_rupiah(jumlah)}*\n"
+        f"✅ Pengeluaran dicatat!\n💸 *{format_rupiah_full(jumlah)}*\n"
         f"📂 {kategori} | 📝 {catatan}{peringatan}",
         parse_mode="Markdown"
     )
@@ -137,7 +142,7 @@ async def masuk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data(data)
 
     await update.message.reply_text(
-        f"✅ Pemasukan dicatat!\n💰 *{format_rupiah(jumlah)}*\n📂 {sumber} | 📝 {catatan}",
+        f"✅ Pemasukan dicatat!\n💰 *{format_rupiah_full(jumlah)}*\n📂 {sumber} | 📝 {catatan}",
         parse_mode="Markdown"
     )
 
@@ -158,9 +163,9 @@ async def ringkasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"📊 *Ringkasan — {date.today().strftime('%d %B %Y')}*\n\n"
-        f"*Hari Ini:*\n💰 Masuk: {format_rupiah(masuk_hari)}\n💸 Keluar: {format_rupiah(keluar_hari)}\n\n"
-        f"*Bulan Ini:*\n💰 Masuk: {format_rupiah(masuk_bln)}\n💸 Keluar: {format_rupiah(keluar_bln)}\n"
-        f"{'🟢' if saldo >= 0 else '🔴'} Saldo: *{format_rupiah(saldo)}*",
+        f"*Hari Ini:*\n💰 Masuk: {format_rupiah_full(masuk_hari)}\n💸 Keluar: {format_rupiah_full(keluar_hari)}\n\n"
+        f"*Bulan Ini:*\n💰 Masuk: {format_rupiah_full(masuk_bln)}\n💸 Keluar: {format_rupiah_full(keluar_bln)}\n"
+        f"{'🟢' if saldo >= 0 else '🔴'} Saldo: *{format_rupiah_full(saldo)}*",
         parse_mode="Markdown"
     )
 
@@ -185,8 +190,8 @@ async def laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if masuk_kat:
         teks += "💰 *PEMASUKAN:*\n"
         for kat, jml in sorted(masuk_kat.items(), key=lambda x: -x[1]):
-            teks += f"  • {kat}: {format_rupiah(jml)}\n"
-        teks += f"  *Total: {format_rupiah(sum(masuk_kat.values()))}*\n\n"
+            teks += f"  • {kat}: {format_rupiah_full(jml)}\n"
+        teks += f"  *Total: {format_rupiah_full(sum(masuk_kat.values()))}*\n\n"
 
     if keluar_kat:
         teks += "💸 *PENGELUARAN:*\n"
@@ -197,8 +202,8 @@ async def laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 persen = min((jml / batas) * 100, 100)
                 bar = "█" * int(persen // 10) + "░" * (10 - int(persen // 10))
                 budget_info = f" [{bar}] {persen:.0f}%"
-            teks += f"  • {kat}: {format_rupiah(jml)}{budget_info}\n"
-        teks += f"  *Total: {format_rupiah(sum(keluar_kat.values()))}*"
+            teks += f"  • {kat}: {format_rupiah_full(jml)}{budget_info}\n"
+        teks += f"  *Total: {format_rupiah_full(sum(keluar_kat.values()))}*"
 
     if not masuk_kat and not keluar_kat:
         teks += "_Belum ada transaksi bulan ini._"
@@ -218,7 +223,7 @@ async def riwayat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for t in transaksi:
         emoji = "💸" if t["tipe"] == "keluar" else "💰"
         tgl = datetime.fromisoformat(t["tanggal"]).strftime("%d/%m %H:%M")
-        teks += f"{emoji} `{tgl}` | {t['kategori']} | *{format_rupiah(t['jumlah'])}*\n"
+        teks += f"{emoji} `{tgl}` | {t['kategori']} | *{format_rupiah_full(t['jumlah'])}*\n"
         if t["catatan"] != "-":
             teks += f"   _{t['catatan']}_\n"
     await update.message.reply_text(teks, parse_mode="Markdown")
@@ -240,7 +245,7 @@ async def budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ud = get_user_data(data, update.effective_user.id)
     ud["budget"][kategori] = jumlah
     save_data(data)
-    await update.message.reply_text(f"✅ Budget *{kategori}* = *{format_rupiah(jumlah)}*/bulan", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Budget *{kategori}* = *{format_rupiah_full(jumlah)}*/bulan", parse_mode="Markdown")
 
 async def cek_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
@@ -258,143 +263,183 @@ async def cek_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
         persen = min((terpakai / batas) * 100, 100)
         bar = "█" * int(persen // 10) + "░" * (10 - int(persen // 10))
         emoji = "🔴" if persen >= 100 else "🟡" if persen >= 80 else "🟢"
-        teks += f"{emoji} *{kat}*\n  [{bar}] {persen:.0f}%\n  {format_rupiah(terpakai)} / {format_rupiah(batas)} | sisa {format_rupiah(max(sisa,0))}\n\n"
+        teks += f"{emoji} *{kat}*\n  [{bar}] {persen:.0f}%\n  {format_rupiah_full(terpakai)} / {format_rupiah_full(batas)} | sisa {format_rupiah_full(max(sisa,0))}\n\n"
     await update.message.reply_text(teks, parse_mode="Markdown")
 
-# ─── GRAFIK ───────────────────────────────────────────────────────────────────
+# ─── /grafik ──────────────────────────────────────────────────────────────────
 
-WARNA = ["#FF6B6B","#4ECDC4","#45B7D1","#96CEB4","#FFEAA7","#DDA0DD","#98D8C8","#F7DC6F","#BB8FCE","#85C1E9"]
+WARNA_KELUAR = ["#FF6B6B","#FF8E8E","#FFB3B3","#FF5252","#E53935","#EF9A9A","#FFCDD2","#D32F2F","#FF7043","#FF8A65"]
+WARNA_MASUK  = ["#4ECDC4","#26C6DA","#80DEEA","#00BCD4","#26A69A","#80CBC4","#B2DFDB","#00897B","#4DB6AC","#00ACC1"]
+BG = "#0f0f1a"
+PANEL = "#1a1a2e"
 
-async def grafik_kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def grafik(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     ud = get_user_data(data, update.effective_user.id)
     bulan_ini = date.today().strftime("%Y-%m")
+    nama_bulan = date.today().strftime("%B %Y")
 
+    # Kumpulkan data
     keluar_kat = defaultdict(float)
+    masuk_kat = defaultdict(float)
     for t in ud["transaksi"]:
-        if t["tipe"] == "keluar" and t["tanggal"][:7] == bulan_ini:
+        if t["tanggal"][:7] != bulan_ini:
+            continue
+        if t["tipe"] == "keluar":
             keluar_kat[t["kategori"]] += t["jumlah"]
+        else:
+            masuk_kat[t["kategori"]] += t["jumlah"]
 
-    if not keluar_kat:
-        await update.message.reply_text("_Belum ada pengeluaran bulan ini._", parse_mode="Markdown")
+    if not keluar_kat and not masuk_kat:
+        await update.message.reply_text("_Belum ada transaksi bulan ini._", parse_mode="Markdown")
         return
 
-    labels = list(keluar_kat.keys())
-    values = list(keluar_kat.values())
-    colors = WARNA[:len(labels)]
+    total_masuk = sum(masuk_kat.values())
+    total_keluar = sum(keluar_kat.values())
+    saldo = total_masuk - total_keluar
 
-    fig, ax = plt.subplots(figsize=(8, 6), facecolor="#1a1a2e")
-    ax.set_facecolor("#1a1a2e")
-
-    wedges, texts, autotexts = ax.pie(
-        values, labels=None, colors=colors,
-        autopct="%1.1f%%", startangle=90,
-        pctdistance=0.75,
-        wedgeprops=dict(width=0.6, edgecolor="#1a1a2e", linewidth=2)
-    )
-    for at in autotexts:
-        at.set_color("white")
-        at.set_fontsize(9)
-        at.set_fontweight("bold")
-
-    legend_labels = [f"{l}  {format_rupiah(v)}" for l, v in zip(labels, values)]
-    patches = [mpatches.Patch(color=colors[i], label=legend_labels[i]) for i in range(len(labels))]
-    ax.legend(handles=patches, loc="lower center", bbox_to_anchor=(0.5, -0.15),
-              ncol=2, frameon=False, labelcolor="white", fontsize=9)
-
-    total = sum(values)
-    ax.text(0, 0, f"Total\n{format_rupiah(total)}", ha="center", va="center",
-            color="white", fontsize=10, fontweight="bold")
-    ax.set_title(f"Pengeluaran {date.today().strftime('%B %Y')}",
-                 color="white", fontsize=13, fontweight="bold", pad=20)
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=150, facecolor="#1a1a2e")
-    buf.seek(0)
-    plt.close()
-
-    await update.message.reply_photo(photo=buf, caption=f"🥧 *Pengeluaran per Kategori — {date.today().strftime('%B %Y')}*", parse_mode="Markdown")
-
-async def grafik_mingguan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from datetime import timedelta
-    data = load_data()
-    ud = get_user_data(data, update.effective_user.id)
-
-    hari_list = [(date.today() - timedelta(days=i)) for i in range(6, -1, -1)]
-    label_hari = [h.strftime("%a\n%d/%m") for h in hari_list]
-
-    keluar_list = []
-    masuk_list = []
-    for h in hari_list:
-        tgl = h.isoformat()
-        keluar_list.append(sum(t["jumlah"] for t in ud["transaksi"] if t["tipe"] == "keluar" and t["tanggal"][:10] == tgl))
-        masuk_list.append(sum(t["jumlah"] for t in ud["transaksi"] if t["tipe"] == "masuk" and t["tanggal"][:10] == tgl))
-
-    x = range(len(hari_list))
-    fig, ax = plt.subplots(figsize=(10, 5), facecolor="#1a1a2e")
-    ax.set_facecolor("#16213e")
-
-    bar_width = 0.35
-    bars1 = ax.bar([i - bar_width/2 for i in x], masuk_list, bar_width, color="#4ECDC4", label="Pemasukan", alpha=0.9)
-    bars2 = ax.bar([i + bar_width/2 for i in x], keluar_list, bar_width, color="#FF6B6B", label="Pengeluaran", alpha=0.9)
-
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(label_hari, color="white", fontsize=8)
-    ax.yaxis.set_visible(False)
-    ax.spines[:].set_visible(False)
-    ax.set_title("Pemasukan vs Pengeluaran 7 Hari Terakhir", color="white", fontsize=12, fontweight="bold", pad=15)
-    ax.legend(frameon=False, labelcolor="white")
-
-    max_val = max(keluar_list + masuk_list) if max(keluar_list + masuk_list) > 0 else 1
-    for bar in bars1:
-        h = bar.get_height()
-        if h > 0:
-            ax.text(bar.get_x() + bar.get_width()/2, h + max_val*0.01,
-                    f"{h/1000:.0f}k", ha="center", color="#4ECDC4", fontsize=7)
-    for bar in bars2:
-        h = bar.get_height()
-        if h > 0:
-            ax.text(bar.get_x() + bar.get_width()/2, h + max_val*0.01,
-                    f"{h/1000:.0f}k", ha="center", color="#FF6B6B", fontsize=7)
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=150, facecolor="#1a1a2e")
-    buf.seek(0)
-    plt.close()
-
-    await update.message.reply_photo(photo=buf, caption="📊 *Grafik 7 Hari Terakhir*", parse_mode="Markdown")
-
-async def grafik_tren(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from datetime import timedelta
-    data = load_data()
-    ud = get_user_data(data, update.effective_user.id)
-
-    hari_list = [(date.today() - timedelta(days=i)) for i in range(29, -1, -1)]
+    # Tren 14 hari
+    hari_list = [(date.today() - timedelta(days=i)) for i in range(13, -1, -1)]
+    tren_keluar = [sum(t["jumlah"] for t in ud["transaksi"]
+        if t["tipe"] == "keluar" and t["tanggal"][:10] == h.isoformat()) for h in hari_list]
+    tren_masuk = [sum(t["jumlah"] for t in ud["transaksi"]
+        if t["tipe"] == "masuk" and t["tanggal"][:10] == h.isoformat()) for h in hari_list]
     label_hari = [h.strftime("%d/%m") for h in hari_list]
 
-    keluar_list = []
-    for h in hari_list:
-        tgl = h.isoformat()
-        keluar_list.append(sum(t["jumlah"] for t in ud["transaksi"] if t["tipe"] == "keluar" and t["tanggal"][:10] == tgl))
+    # ── Layout: 2 baris, 3 kolom ──────────────────────────────────────────────
+    fig = plt.figure(figsize=(14, 9), facecolor=BG)
+    gs = gridspec.GridSpec(2, 3, figure=fig,
+                           hspace=0.45, wspace=0.35,
+                           left=0.06, right=0.97, top=0.88, bottom=0.1)
 
-    fig, ax = plt.subplots(figsize=(12, 5), facecolor="#1a1a2e")
-    ax.set_facecolor("#16213e")
+    ax_pie_k  = fig.add_subplot(gs[0, 0])   # pie pengeluaran
+    ax_pie_m  = fig.add_subplot(gs[0, 1])   # pie pemasukan
+    ax_info   = fig.add_subplot(gs[0, 2])   # kotak info ringkasan
+    ax_tren   = fig.add_subplot(gs[1, :])   # tren 14 hari full width
 
-    ax.fill_between(range(len(hari_list)), keluar_list, alpha=0.3, color="#FF6B6B")
-    ax.plot(range(len(hari_list)), keluar_list, color="#FF6B6B", linewidth=2, marker="o", markersize=3)
+    for ax in [ax_pie_k, ax_pie_m, ax_info, ax_tren]:
+        ax.set_facecolor(PANEL)
 
-    ax.set_xticks(range(0, len(hari_list), 5))
-    ax.set_xticklabels([label_hari[i] for i in range(0, len(hari_list), 5)], color="white", fontsize=8)
-    ax.yaxis.set_visible(False)
-    ax.spines[:].set_visible(False)
-    ax.set_title("Tren Pengeluaran 30 Hari Terakhir", color="white", fontsize=12, fontweight="bold", pad=15)
+    # ── Judul utama ───────────────────────────────────────────────────────────
+    fig.text(0.5, 0.94, f"📊 Laporan Keuangan — {nama_bulan}",
+             ha="center", va="center", color="white",
+             fontsize=15, fontweight="bold")
 
+    # ── PIE 1: Pengeluaran per kategori ──────────────────────────────────────
+    if keluar_kat:
+        kat_k = list(keluar_kat.keys())
+        val_k = list(keluar_kat.values())
+        clr_k = WARNA_KELUAR[:len(kat_k)]
+        wedges, _, autotexts = ax_pie_k.pie(
+            val_k, colors=clr_k, autopct="%1.0f%%",
+            startangle=90, pctdistance=0.72,
+            wedgeprops=dict(width=0.55, edgecolor=PANEL, linewidth=1.5)
+        )
+        for at in autotexts:
+            at.set(color="white", fontsize=7, fontweight="bold")
+        ax_pie_k.set_title("💸 Pengeluaran", color="#FF6B6B", fontsize=10, fontweight="bold", pad=8)
+        ax_pie_k.text(0, 0, format_rupiah(total_keluar),
+                      ha="center", va="center", color="white", fontsize=8, fontweight="bold")
+        legend_k = [mpatches.Patch(color=clr_k[i], label=f"{kat_k[i]} ({format_rupiah(val_k[i])})")
+                    for i in range(len(kat_k))]
+        ax_pie_k.legend(handles=legend_k, loc="lower center",
+                        bbox_to_anchor=(0.5, -0.28), ncol=1,
+                        frameon=False, labelcolor="white", fontsize=7)
+    else:
+        ax_pie_k.text(0.5, 0.5, "Tidak ada\npengeluaran",
+                      ha="center", va="center", color="#888", transform=ax_pie_k.transAxes)
+        ax_pie_k.set_title("💸 Pengeluaran", color="#FF6B6B", fontsize=10, fontweight="bold", pad=8)
+        ax_pie_k.axis("off")
+
+    # ── PIE 2: Pemasukan per sumber ───────────────────────────────────────────
+    if masuk_kat:
+        kat_m = list(masuk_kat.keys())
+        val_m = list(masuk_kat.values())
+        clr_m = WARNA_MASUK[:len(kat_m)]
+        wedges2, _, autotexts2 = ax_pie_m.pie(
+            val_m, colors=clr_m, autopct="%1.0f%%",
+            startangle=90, pctdistance=0.72,
+            wedgeprops=dict(width=0.55, edgecolor=PANEL, linewidth=1.5)
+        )
+        for at in autotexts2:
+            at.set(color="white", fontsize=7, fontweight="bold")
+        ax_pie_m.set_title("💰 Pemasukan", color="#4ECDC4", fontsize=10, fontweight="bold", pad=8)
+        ax_pie_m.text(0, 0, format_rupiah(total_masuk),
+                      ha="center", va="center", color="white", fontsize=8, fontweight="bold")
+        legend_m = [mpatches.Patch(color=clr_m[i], label=f"{kat_m[i]} ({format_rupiah(val_m[i])})")
+                    for i in range(len(kat_m))]
+        ax_pie_m.legend(handles=legend_m, loc="lower center",
+                        bbox_to_anchor=(0.5, -0.28), ncol=1,
+                        frameon=False, labelcolor="white", fontsize=7)
+    else:
+        ax_pie_m.text(0.5, 0.5, "Tidak ada\npemasukan",
+                      ha="center", va="center", color="#888", transform=ax_pie_m.transAxes)
+        ax_pie_m.set_title("💰 Pemasukan", color="#4ECDC4", fontsize=10, fontweight="bold", pad=8)
+        ax_pie_m.axis("off")
+
+    # ── KOTAK INFO RINGKASAN ──────────────────────────────────────────────────
+    ax_info.axis("off")
+    ax_info.set_title("📋 Ringkasan", color="white", fontsize=10, fontweight="bold", pad=8)
+
+    items = [
+        ("Total Masuk",   format_rupiah_full(total_masuk),  "#4ECDC4"),
+        ("Total Keluar",  format_rupiah_full(total_keluar), "#FF6B6B"),
+        ("Saldo",         format_rupiah_full(saldo),        "#FFD700" if saldo >= 0 else "#FF4444"),
+    ]
+    for i, (label, val, clr) in enumerate(items):
+        y = 0.78 - i * 0.28
+        ax_info.add_patch(plt.Rectangle((0.05, y - 0.12), 0.9, 0.22,
+                          transform=ax_info.transAxes, color="#0f0f1a",
+                          clip_on=False, zorder=0, linewidth=0))
+        ax_info.text(0.5, y + 0.04, label, ha="center", va="center",
+                     transform=ax_info.transAxes, color="#aaa", fontsize=8)
+        ax_info.text(0.5, y - 0.07, val, ha="center", va="center",
+                     transform=ax_info.transAxes, color=clr, fontsize=10, fontweight="bold")
+
+    emoji_saldo = "🟢 Surplus" if saldo >= 0 else "🔴 Defisit"
+    ax_info.text(0.5, 0.04, emoji_saldo, ha="center", va="center",
+                 transform=ax_info.transAxes, color="#FFD700" if saldo >= 0 else "#FF4444",
+                 fontsize=9, fontweight="bold")
+
+    # ── TREN 14 HARI ─────────────────────────────────────────────────────────
+    x = range(len(hari_list))
+    ax_tren.fill_between(x, tren_masuk, alpha=0.15, color="#4ECDC4")
+    ax_tren.fill_between(x, tren_keluar, alpha=0.15, color="#FF6B6B")
+    ax_tren.plot(x, tren_masuk, color="#4ECDC4", linewidth=2, marker="o", markersize=4, label="Masuk")
+    ax_tren.plot(x, tren_keluar, color="#FF6B6B", linewidth=2, marker="o", markersize=4, label="Keluar")
+
+    ax_tren.set_xticks(list(x))
+    ax_tren.set_xticklabels(label_hari, color="white", fontsize=7.5)
+    ax_tren.yaxis.set_visible(False)
+    ax_tren.spines[:].set_visible(False)
+    ax_tren.tick_params(colors="white")
+    ax_tren.set_title("📈 Tren 14 Hari Terakhir", color="white", fontsize=10, fontweight="bold", pad=8)
+    ax_tren.legend(frameon=False, labelcolor="white", fontsize=8, loc="upper left")
+
+    # label nilai di titik
+    max_val = max(max(tren_masuk, default=0), max(tren_keluar, default=0))
+    for i, (m, k) in enumerate(zip(tren_masuk, tren_keluar)):
+        if m > 0:
+            ax_tren.text(i, m + max_val * 0.04, format_rupiah(m),
+                         ha="center", color="#4ECDC4", fontsize=6.5)
+        if k > 0:
+            ax_tren.text(i, k + max_val * 0.04, format_rupiah(k),
+                         ha="center", color="#FF6B6B", fontsize=6.5)
+
+    # ── Render & kirim ────────────────────────────────────────────────────────
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=150, facecolor="#1a1a2e")
+    plt.savefig(buf, format="png", dpi=150, facecolor=BG, bbox_inches="tight")
     buf.seek(0)
     plt.close()
 
-    await update.message.reply_photo(photo=buf, caption="📉 *Tren Pengeluaran 30 Hari*", parse_mode="Markdown")
+    saldo_teks = f"{'🟢 Surplus' if saldo >= 0 else '🔴 Defisit'} {format_rupiah_full(abs(saldo))}"
+    caption = (
+        f"📊 *Grafik Keuangan — {nama_bulan}*\n"
+        f"💰 Masuk: {format_rupiah_full(total_masuk)}\n"
+        f"💸 Keluar: {format_rupiah_full(total_keluar)}\n"
+        f"{saldo_teks}"
+    )
+    await update.message.reply_photo(photo=buf, caption=caption, parse_mode="Markdown")
 
 # ─── PENGINGAT HARIAN ─────────────────────────────────────────────────────────
 
@@ -415,12 +460,12 @@ async def kirim_reminder(context: ContextTypes.DEFAULT_TYPE):
         f"⏰ *Pengingat Keuangan Harian*\n"
         f"_{date.today().strftime('%A, %d %B %Y')}_\n\n"
         f"*Hari Ini:*\n"
-        f"💰 Masuk: {format_rupiah(masuk_hari)}\n"
-        f"💸 Keluar: {format_rupiah(keluar_hari)}\n\n"
+        f"💰 Masuk: {format_rupiah_full(masuk_hari)}\n"
+        f"💸 Keluar: {format_rupiah_full(keluar_hari)}\n\n"
         f"*Bulan Ini:*\n"
-        f"💰 Masuk: {format_rupiah(masuk_bln)}\n"
-        f"💸 Keluar: {format_rupiah(keluar_bln)}\n"
-        f"{'🟢' if masuk_bln >= keluar_bln else '🔴'} Saldo: *{format_rupiah(masuk_bln - keluar_bln)}*\n\n"
+        f"💰 Masuk: {format_rupiah_full(masuk_bln)}\n"
+        f"💸 Keluar: {format_rupiah_full(keluar_bln)}\n"
+        f"{'🟢' if masuk_bln >= keluar_bln else '🔴'} Saldo: *{format_rupiah_full(masuk_bln - keluar_bln)}*\n\n"
         f"_Jangan lupa catat transaksi hari ini ya!_ 📝"
     )
     await context.bot.send_message(chat_id=user_id, text=teks, parse_mode="Markdown")
@@ -512,9 +557,7 @@ def main():
     app.add_handler(CommandHandler("riwayat", riwayat))
     app.add_handler(CommandHandler("budget", budget))
     app.add_handler(CommandHandler("cek_budget", cek_budget))
-    app.add_handler(CommandHandler("grafik_kategori", grafik_kategori))
-    app.add_handler(CommandHandler("grafik_mingguan", grafik_mingguan))
-    app.add_handler(CommandHandler("grafik_tren", grafik_tren))
+    app.add_handler(CommandHandler("grafik", grafik))
     app.add_handler(CommandHandler("reminder", reminder))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
