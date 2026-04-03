@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 import os
-TOKEN = os.environ.get(8600828372:AAFvyDGXlUfnSWCgJs5kTXqxV9bjcWlVY7g)  # Ganti dengan token dari @BotFather
+TOKEN = os.environ.get"8600828372:AAFvyDGXlUfnSWCgJs5kTXqxV9bjcWlVY7g"  # Ganti dengan token dari @BotFather
 DATA_FILE = "keuangan.json"
 
 # ─── Simpan & Load Data ────────────────────────────────────────────────────────
